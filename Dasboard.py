@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-
 # Coba import plotly.express, jika gagal, gunakan alternatif atau pesan error
 try:
     import plotly.express as px
@@ -70,7 +69,7 @@ def train_sales_model(df):
     if df.empty:
         return None, None, None
     # Persiapan data
-    encoder = OneHotEncoder(sparse_output=False)
+    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')  # Tambahkan handle_unknown untuk menghindari error pada kategori baru
     encoded_features = encoder.fit_transform(df[['produk', 'lokasi']])
     encoded_df = pd.DataFrame(encoded_features, columns=encoder.get_feature_names_out(['produk', 'lokasi']))
     
@@ -85,7 +84,7 @@ def train_sales_model(df):
         model = LinearRegression()
         model.fit(X, y)
         mse = None  # Tidak dapat menghitung MSE karena tidak ada test set
-        print("Data terlalu sedikit untuk menghitung MSE. Model dilatih pada semua data.")
+        st.info("Data terlalu sedikit untuk menghitung MSE. Model dilatih pada semua data.")
     else:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         model = LinearRegression()
@@ -93,7 +92,7 @@ def train_sales_model(df):
         
         predictions = model.predict(X_test)
         mse = mean_squared_error(y_test, predictions)
-        print(f'Mean Squared Error: {mse}')
+        st.info(f'Mean Squared Error: {mse:.2f}')
     
     return model, encoder, mse
 
@@ -155,31 +154,41 @@ elif page == "Ringkasan":
     total_revenue = filtered_df['pendapatan'].sum()
     avg_revenue = filtered_df['pendapatan'].mean()
     st.metric("Total Penjualan (Unit)", total_sales)
-    st.metric("Rata-rata Penjualan Harian (Unit)", round(avg_sales, 2))
+    st.metric("Rata-rata Penjualan Harian (Unit)", round(avg_sales, 2) if not np.isnan(avg_sales) else 0)
     st.metric("Total Pendapatan (Rp)", f"Rp {total_revenue:,.0f}")
-    st.metric("Rata-rata Pendapatan Harian (Rp)", f"Rp {avg_revenue:,.0f}")
+    st.metric("Rata-rata Pendapatan Harian (Rp)", f"Rp {avg_revenue:,.0f}" if not np.isnan(avg_revenue) else "Rp 0")
     
     # 1. Ringkasan penjualan setiap hari (tabel total penjualan per hari)
     st.subheader("Ringkasan Penjualan Setiap Hari")
-    daily_sales = filtered_df.groupby('tanggal')[['jumlah_penjualan', 'pendapatan']].sum().reset_index()
-    daily_sales = daily_sales.rename(columns={'jumlah_penjualan': 'Total Penjualan (Unit)', 'pendapatan': 'Total Pendapatan (Rp)'})
-    daily_sales['Total Pendapatan (Rp)'] = daily_sales['Total Pendapatan (Rp)'].apply(lambda x: f"Rp {x:,.0f}")
-    st.dataframe(daily_sales)
+    if not filtered_df.empty:
+        daily_sales = filtered_df.groupby('tanggal')[['jumlah_penjualan', 'pendapatan']].sum().reset_index()
+        daily_sales = daily_sales.rename(columns={'jumlah_penjualan': 'Total Penjualan (Unit)', 'pendapatan': 'Total Pendapatan (Rp)'})
+        daily_sales['Total Pendapatan (Rp)'] = daily_sales['Total Pendapatan (Rp)'].apply(lambda x: f"Rp {x:,.0f}")
+        st.dataframe(daily_sales)
+    else:
+        st.write("Tidak ada data dalam rentang tanggal yang dipilih.")
     
     # 2. Ringkasan penjualan perharian (grafik tren harian)
     st.subheader("Tren Penjualan Perharian")
-    if PLOTLY_AVAILABLE:
-        fig = px.line(daily_sales, x='tanggal', y='Total Penjualan (Unit)', title='Total Penjualan per Hari (Unit)')
-        st.plotly_chart(fig)
+    if not filtered_df.empty:
+        daily_sales = filtered_df.groupby('tanggal')[['jumlah_penjualan']].sum().reset_index()
+        if PLOTLY_AVAILABLE:
+            fig = px.line(daily_sales, x='tanggal', y='jumlah_penjualan', title='Total Penjualan per Hari (Unit)')
+            st.plotly_chart(fig)
+        else:
+            st.bar_chart(daily_sales.set_index('tanggal')['jumlah_penjualan'])
     else:
-        st.bar_chart(daily_sales.set_index('tanggal')['Total Penjualan (Unit)'])
+        st.write("Tidak ada data untuk ditampilkan.")
     
     # 3. Rata-rata barang yang dibeli per hari setiap wilayah (tabel rata-rata per hari per lokasi)
     st.subheader("Rata-rata Barang Dibeli per Hari per Wilayah")
-    avg_daily_per_location = filtered_df.groupby(['lokasi', 'tanggal'])[['jumlah_penjualan', 'pendapatan']].sum().groupby('lokasi').mean().reset_index()
-    avg_daily_per_location = avg_daily_per_location.rename(columns={'jumlah_penjualan': 'Rata-rata Penjualan per Hari (Unit)', 'pendapatan': 'Rata-rata Pendapatan per Hari (Rp)'})
-    avg_daily_per_location['Rata-rata Pendapatan per Hari (Rp)'] = avg_daily_per_location['Rata-rata Pendapatan per Hari (Rp)'].apply(lambda x: f"Rp {x:,.0f}")
-    st.dataframe(avg_daily_per_location)
+    if not filtered_df.empty:
+        avg_daily_per_location = filtered_df.groupby(['lokasi', 'tanggal'])[['jumlah_penjualan', 'pendapatan']].sum().groupby('lokasi').mean().reset_index()
+        avg_daily_per_location = avg_daily_per_location.rename(columns={'jumlah_penjualan': 'Rata-rata Penjualan per Hari (Unit)', 'pendapatan': 'Rata-rata Pendapatan per Hari (Rp)'})
+        avg_daily_per_location['Rata-rata Pendapatan per Hari (Rp)'] = avg_daily_per_location['Rata-rata Pendapatan per Hari (Rp)'].apply(lambda x: f"Rp {x:,.0f}")
+        st.dataframe(avg_daily_per_location)
+    else:
+        st.write("Tidak ada data dalam rentang tanggal yang dipilih.")
 
 elif page == "Visualisasi":
     st.title("Visualisasi Penjualan")
@@ -191,59 +200,63 @@ elif page == "Visualisasi":
     end_date = st.date_input("Pilih Tanggal Akhir", value=pd.to_datetime('2023-12-31'), key="vis_end")
     filtered_df = sales_df[(sales_df['tanggal'] >= pd.to_datetime(start_date)) & (sales_df['tanggal'] <= pd.to_datetime(end_date))]
     
-    # Grafik per produk (yang sudah ada)
-    st.subheader("Grafik Penjualan per Produk (Unit)")
-    st.bar_chart(filtered_df.groupby('produk')['jumlah_penjualan'].sum())
-    
-    # Grafik pendapatan per produk
-    st.subheader("Grafik Pendapatan per Produk (Rp)")
-    product_revenue = filtered_df.groupby('produk')['pendapatan'].sum().reset_index()
-    if PLOTLY_AVAILABLE:
-        fig_product_rev = px.bar(product_revenue, x='produk', y='pendapatan', title='Total Pendapatan per Produk (Rp)', color='produk')
-        fig_product_rev.update_yaxes(tickformat=",.0f")
-        st.plotly_chart(fig_product_rev)
+    if filtered_df.empty:
+        st.write("Tidak ada data dalam rentang tanggal yang dipilih.")
     else:
-        st.bar_chart(product_revenue.set_index('produk')['pendapatan'])
-    
-    # Grafik per daerah (lokasi) - merinci jumlah penjualan per daerah
-    st.subheader("Grafik Penjualan per Daerah (Unit)")
-    location_sales = filtered_df.groupby('lokasi')['jumlah_penjualan'].sum().reset_index()
-    if PLOTLY_AVAILABLE:
-        fig_location = px.bar(location_sales, x='lokasi', y='jumlah_penjualan', title='Total Penjualan per Daerah (Unit)', color='lokasi')
-        st.plotly_chart(fig_location)
-    else:
-        st.bar_chart(location_sales.set_index('lokasi')['jumlah_penjualan'])
-    
-    # Grafik pendapatan per daerah
-    st.subheader("Grafik Pendapatan per Daerah (Rp)")
-    location_revenue = filtered_df.groupby('lokasi')['pendapatan'].sum().reset_index()
-    if PLOTLY_AVAILABLE:
-        fig_location_rev = px.bar(location_revenue, x='lokasi', y='pendapatan', title='Total Pendapatan per Daerah (Rp)', color='lokasi')
-        fig_location_rev.update_yaxes(tickformat=",.0f")
-        st.plotly_chart(fig_location_rev)
-    else:
-        st.bar_chart(location_revenue.set_index('lokasi')['pendapatan'])
-    
-    # Peta interaktif dengan detail jumlah penjualan per daerah
-    st.subheader("Peta Penjualan per Daerah (Unit)")
-    # Hitung total penjualan per lokasi unik
-    location_totals = filtered_df.groupby(['lokasi', 'lat', 'lon'])['jumlah_penjualan'].sum().reset_index()
-    if location_totals.empty:
-        st.write("Tidak ada data penjualan dalam rentang tanggal yang dipilih.")
-    else:
+        # Grafik per produk (yang sudah ada)
+        st.subheader("Grafik Penjualan per Produk (Unit)")
+        product_sales = filtered_df.groupby('produk')['jumlah_penjualan'].sum().reset_index()
+        st.bar_chart(product_sales.set_index('produk')['jumlah_penjualan'])
+        
+        # Grafik pendapatan per produk
+        st.subheader("Grafik Pendapatan per Produk (Rp)")
+        product_revenue = filtered_df.groupby('produk')['pendapatan'].sum().reset_index()
         if PLOTLY_AVAILABLE:
-            # Pastikan kolom numerik untuk Plotly
-            location_totals['jumlah_penjualan'] = pd.to_numeric(location_totals['jumlah_penjualan'], errors='coerce').fillna(0)
-            location_totals['lat'] = pd.to_numeric(location_totals['lat'], errors='coerce').fillna(0)
-            location_totals['lon'] = pd.to_numeric(location_totals['lon'], errors='coerce').fillna(0)
-            
-            fig_map = px.scatter_geo(location_totals, lat="lat", lon="lon", size="jumlah_penjualan",
-                                     hover_name="lokasi", hover_data={"jumlah_penjualan": True},
-                                     color_discrete_sequence=["fuchsia"], scope="asia", projection="natural earth",
-                                     title="Peta Penjualan per Daerah (Unit)")
-            st.plotly_chart(fig_map)
+            fig_product_rev = px.bar(product_revenue, x='produk', y='pendapatan', title='Total Pendapatan per Produk (Rp)', color='produk')
+            fig_product_rev.update_yaxes(tickformat=",.0f")
+            st.plotly_chart(fig_product_rev)
         else:
-            st.write("Peta tidak dapat ditampilkan karena library Plotly tidak tersedia. Gunakan grafik batang di atas sebagai alternatif.")
+            st.bar_chart(product_revenue.set_index('produk')['pendapatan'])
+        
+        # Grafik per daerah (lokasi) - merinci jumlah penjualan per daerah
+        st.subheader("Grafik Penjualan per Daerah (Unit)")
+        location_sales = filtered_df.groupby('lokasi')['jumlah_penjualan'].sum().reset_index()
+        if PLOTLY_AVAILABLE:
+            fig_location = px.bar(location_sales, x='lokasi', y='jumlah_penjualan', title='Total Penjualan per Daerah (Unit)', color='lokasi')
+            st.plotly_chart(fig_location)
+        else:
+            st.bar_chart(location_sales.set_index('lokasi')['jumlah_penjualan'])
+        
+        # Grafik pendapatan per daerah
+        st.subheader("Grafik Pendapatan per Daerah (Rp)")
+        location_revenue = filtered_df.groupby('lokasi')['pendapatan'].sum().reset_index()
+        if PLOTLY_AVAILABLE:
+            fig_location_rev = px.bar(location_revenue, x='lokasi', y='pendapatan', title='Total Pendapatan per Daerah (Rp)', color='lokasi')
+            fig_location_rev.update_yaxes(tickformat=",.0f")
+            st.plotly_chart(fig_location_rev)
+        else:
+            st.bar_chart(location_revenue.set_index('lokasi')['pendapatan'])
+        
+        # Peta interaktif dengan detail jumlah penjualan per daerah
+        st.subheader("Peta Penjualan per Daerah (Unit)")
+        # Hitung total penjualan per lokasi unik
+        location_totals = filtered_df.groupby(['lokasi', 'lat', 'lon'])['jumlah_penjualan'].sum().reset_index()
+        if location_totals.empty:
+            st.write("Tidak ada data penjualan dalam rentang tanggal yang dipilih.")
+        else:
+            if PLOTLY_AVAILABLE:
+                # Pastikan kolom numerik untuk Plotly
+                location_totals['jumlah_penjualan'] = pd.to_numeric(location_totals['jumlah_penjualan'], errors='coerce').fillna(0)
+                location_totals['lat'] = pd.to_numeric(location_totals['lat'], errors='coerce').fillna(0)
+                location_totals['lon'] = pd.to_numeric(location_totals['lon'], errors='coerce').fillna(0)
+                
+                fig_map = px.scatter_geo(location_totals, lat="lat", lon="lon", size="jumlah_penjualan",
+                                         hover_name="lokasi", hover_data={"jumlah_penjualan": True},
+                                         color_discrete_sequence=["fuchsia"], scope="asia", projection="natural earth",
+                                         title="Peta Penjualan per Daerah (Unit)")
+                st.plotly_chart(fig_map)
+            else:
+                st.write("Peta tidak dapat ditampilkan karena library Plotly tidak tersedia. Gunakan grafik batang di atas sebagai alternatif.")
 
 elif page == "Prediksi":
     st.title("Prediksi Penjualan")
@@ -269,7 +282,7 @@ elif page == "Prediksi":
             if st.button("Prediksi Penjualan"):
                 try:
                     # Encode input
-                    input_encoded = encoder.transform([[produk_input, lokasi_input]])
+                    input_encoded = encoder.transform(np.array([[produk_input, lokasi_input]]))  # Gunakan np.array untuk memastikan 2D
                     encoded_df = pd.DataFrame(input_encoded, columns=encoder.get_feature_names_out(['produk', 'lokasi']))
                     
                     # Buat input_df dengan urutan kolom yang sama seperti saat training: ['hari'] + encoded columns
@@ -292,5 +305,4 @@ elif page == "Prediksi":
                     else:
                         st.write("**Akurasi Model**: Tidak dapat dihitung karena data terlalu sedikit.")
                 except Exception as e:
-
                     st.error(f"Terjadi kesalahan saat melakukan prediksi: {str(e)}")
