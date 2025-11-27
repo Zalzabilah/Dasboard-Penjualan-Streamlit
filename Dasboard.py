@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-
 # Coba import plotly.express, jika gagal, gunakan alternatif atau pesan error
 try:
     import plotly.express as px
@@ -293,4 +292,3 @@ elif page == "Prediksi":
                         st.write("**Akurasi Model**: Tidak dapat dihitung karena data terlalu sedikit.")
                 except Exception as e:
                     st.error(f"Terjadi kesalahan saat melakukan prediksi: {str(e)}")
-
